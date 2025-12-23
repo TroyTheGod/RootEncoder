@@ -73,6 +73,8 @@ public class VideoEncoder extends BaseEncoder implements GetCameraData {
   private FormatVideoEncoder formatVideoEncoder = FormatVideoEncoder.YUV420Dynamical;
   private int profile = -1;
   private int level = -1;
+  private long videoFrameCount = 0;
+  private long lastVideoPts = 0;
 
   public VideoEncoder(GetVideoData getVideoData) {
     this.getVideoData = getVideoData;
@@ -188,7 +190,11 @@ public class VideoEncoder extends BaseEncoder implements GetCameraData {
 
   @Override
   public void start(boolean resetTs) {
-    if (resetTs) firstTimestamp = 0;
+    if (resetTs) {
+        firstTimestamp = 0;
+        videoFrameCount = 0;
+        lastVideoPts = 0;
+    }
     forceKey = false;
     shouldReset = resetTs;
     spsPpsSetted = false;
@@ -516,7 +522,22 @@ public class VideoEncoder extends BaseEncoder implements GetCameraData {
 
   @Override
   protected long calculatePts(Frame frame, long presentTimeUs) {
-    return Math.max(0, frame.getTimeStamp() - presentTimeUs);
+      // 1. 计算相对时间 (这里用的是真实物理时间差)
+      long pts = frame.getTimeStamp() - presentTimeUs;
+
+      if (pts < 0) {
+          pts = 0;
+      }
+
+      // 2. 单调递增保护
+      // 注意：现在 lastVideoPts 在 start() 时被重置为 0 了，
+      // 所以第二个视频开始时，pts(0) <= lastVideoPts(0) 成立，会变成 1000us (1ms)，这是完全正常的。
+      if (pts <= lastVideoPts && lastVideoPts != 0) {
+          pts = lastVideoPts + 1000;
+      }
+
+      lastVideoPts = pts;
+      return pts;
   }
 
   @Override

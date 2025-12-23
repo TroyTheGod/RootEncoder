@@ -131,11 +131,12 @@ public abstract class BaseEncoder implements EncoderCallback {
   protected abstract void stopImp();
 
   protected void fixTimeStamp(MediaCodec.BufferInfo info) {
-    if (oldTimeStamp > info.presentationTimeUs) {
-      info.presentationTimeUs = oldTimeStamp;
-    } else {
-      oldTimeStamp = info.presentationTimeUs;
+    if (oldTimeStamp >= info.presentationTimeUs) {
+      // If the timestamp regresses or stays the same, force it forward by 1ms.
+      // This prevents Muxer errors and overlapping frames in editors/YouTube.
+      info.presentationTimeUs = oldTimeStamp + 1000;
     }
+    oldTimeStamp = info.presentationTimeUs;
   }
 
   private void reloadCodec(IllegalStateException e) {

@@ -48,6 +48,9 @@ public class AudioEncoder extends BaseEncoder implements GetMicrophoneData {
   private boolean isStereo = true;
   private GetFrame getFrame;
   private long tsBuffer = 0;
+  // Accrued samples processed to ensure perfect linear PTS
+  private long totalSamplesProcessed = 0;
+  private long lastAudioPts = 0;
 
   public AudioEncoder(GetAudioData getAudioData) {
     this.getAudioData = getAudioData;
@@ -117,7 +120,11 @@ public class AudioEncoder extends BaseEncoder implements GetMicrophoneData {
 
   @Override
   public void start(boolean resetTs) {
-    if (resetTs) tsBuffer = 0;
+      if (resetTs) {
+          tsBuffer = 0;
+          totalSamplesProcessed = 0; // 必须重置
+          lastAudioPts = 0;
+      }
     shouldReset = resetTs;
     Log.i(TAG, "started");
   }
@@ -143,18 +150,27 @@ public class AudioEncoder extends BaseEncoder implements GetMicrophoneData {
 
   @Override
   protected long calculatePts(Frame frame, long presentTimeUs) {
-    long pts;
-    long clockPts = Math.max(0, frame.getTimeStamp() - presentTimeUs);
-    if (timestampMode == TimestampMode.CLOCK) {
-      pts = clockPts;
-    } else {
-      if (tsBuffer == 0) tsBuffer = clockPts;
-      int channels = isStereo ? 2 : 1;
-      tsBuffer += (long)((double)frame.getSize() / (sampleRate * channels * 2L)) * 1_000_000L;
-      if (clockPts - tsBuffer > 500_000) tsBuffer = clockPts;
-      pts = tsBuffer;
-    }
-    return pts;
+  int channels = isStereo ? 2 : 1;
+  // 16位深度 = 2 bytes
+  int bytesPerSample = 2;
+
+  // 1. 直接计算相对时间戳 (从0开始)
+  // 注意：totalSamplesProcessed 必须是类成员变量，并在开始录制时重置为0
+  long relativePts = (totalSamplesProcessed * 1_000_000L) / sampleRate;
+
+  // 2. 累加采样数
+  int samplesInThisFrame = frame.getSize() / (channels * bytesPerSample);
+  totalSamplesProcessed += samplesInThisFrame;
+
+  // 3. 严格单调递增保护 (防止播放器报错)
+  if (relativePts <= lastAudioPts && lastAudioPts != 0) {
+      // 如果计算出的时间比上一帧还早（极罕见），强制加一点点
+      relativePts = lastAudioPts + 100; // +100us
+  }
+  lastAudioPts = relativePts;
+
+  // 【关键修改】直接返回 relativePts，不要加 presentTimeUs
+  return relativePts;
   }
 
   @Override
