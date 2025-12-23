@@ -38,8 +38,10 @@ public abstract class BaseRecordController implements RecordController {
     protected Listener listener;
     protected int videoTrack = -1;
     protected int audioTrack = -1;
+    protected final MediaCodec.BufferInfo videoInfo = new MediaCodec.BufferInfo();
+    protected final MediaCodec.BufferInfo audioInfo = new MediaCodec.BufferInfo();
     protected BitrateManager bitrateManager;
-    protected volatile long startTs = 0;
+    protected long startTs = 0;
     protected RecordTracks tracks = RecordTracks.ALL;
 
     public void setVideoCodec(VideoCodec videoCodec) {
@@ -98,11 +100,11 @@ public abstract class BaseRecordController implements RecordController {
     }
 
     //We can't reuse info because could produce stream issues
-    protected MediaCodec.BufferInfo updateFormat(MediaCodec.BufferInfo oldInfo) {
-        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+    protected void updateFormat(MediaCodec.BufferInfo newInfo, MediaCodec.BufferInfo oldInfo) {
         if (startTs <= 0) startTs = oldInfo.presentationTimeUs;
-        long ts = Math.max(0, oldInfo.presentationTimeUs - startTs - pauseTime);
-        info.set(oldInfo.offset, oldInfo.size, ts, oldInfo.flags);
-        return info;
+        newInfo.flags = oldInfo.flags;
+        newInfo.offset = oldInfo.offset;
+        newInfo.size = oldInfo.size;
+        newInfo.presentationTimeUs = Math.max(0, oldInfo.presentationTimeUs - startTs - pauseTime);
     }
 }
